@@ -59,7 +59,9 @@ async def packages_and_dependencies() -> dict[str, set[str]]:
     Returns: dict mapping installed packages to sets of their dependencies
 
     """
-    packages_set = await packages_names()
+    packages_set = await packages_names(
+        ""
+    )  # omit the `e` so we get all packages and dependencies for a full tree
 
     async def collect_dependencies(package: str) -> tuple[str, set[str]]:
         return package, await package_dependencies(package)
@@ -79,6 +81,7 @@ class DependencyCalculator:
             dependency_dict: dictionary mapping package names to their set of direct dependencies
         """
         self._dependency_dict = dependency_dict
+        self._observed_packages = set()
 
     @cache
     def calculate_all_dependencies(self, package: str) -> set[str]:
@@ -88,6 +91,11 @@ class DependencyCalculator:
             package: package to calculate dependencies
         """
         dependencies = self._dependency_dict.get(package, set())
+        if package in self._observed_packages:
+            # dependency cycle detected, don't continue recursing
+            return dependencies
+        self._observed_packages.add(package)
+
         additional_dependencies = set().union(
             *(
                 self.calculate_all_dependencies(dependency)
@@ -105,7 +113,10 @@ async def main(n: int = 10, recursive: bool = False, ignore: set[str] = None):
         recursive: whether to calculate package dependencies recursively
         n: number of worst offenders to show
     """
-    packages_unfiltered = await packages_and_dependencies()
+    (
+        packages_unfiltered,
+        explicitly_installed_packages_unfiltered,
+    ) = await asyncio.gather(packages_and_dependencies(), packages_names())
     ignore_set = ignore or set()
 
     packages = {
@@ -115,19 +126,30 @@ async def main(n: int = 10, recursive: bool = False, ignore: set[str] = None):
         for package, dependencies in packages_unfiltered.items()
         if package not in ignore_set
     }
-    print(f"total installed packages: {len(packages)}")
+
+    explicitly_installed_packages = {
+        package
+        for package in explicitly_installed_packages_unfiltered
+        if package not in ignore_set
+    }
+    print(f"total installed packages: {len(explicitly_installed_packages)}")
 
     if recursive:
         dependency_calcualator = DependencyCalculator(packages)
         recursive_dependencies = {
             package: dependency_calcualator.calculate_all_dependencies(package)
-            for package in packages
+            for package in explicitly_installed_packages
         }
     else:
-        recursive_dependencies = packages
+        recursive_dependencies = {
+            package: dependency
+            for package, dependency in packages.items()
+            if package in explicitly_installed_packages
+        }
 
     packages_sorted = sorted(
-        packages.keys(), key=lambda package: -len(recursive_dependencies[package])
+        recursive_dependencies.keys(),
+        key=lambda package: -len(recursive_dependencies[package]),
     )
     print(f"top {n} packages:")
     print(
