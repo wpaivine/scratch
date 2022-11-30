@@ -97,14 +97,24 @@ class DependencyCalculator:
         return {*dependencies, *additional_dependencies}
 
 
-async def main(n: int = 10, recursive: bool = False):
+async def main(n: int = 10, recursive: bool = False, ignore: set[str] = None):
     """
     List number of manually installed packages and show the top N packages with the most dependencies
     Args:
+        ignore: set of packages to ignore for the calculation
         recursive: whether to calculate package dependencies recursively
         n: number of worst offenders to show
     """
-    packages = await packages_and_dependencies()
+    packages_unfiltered = await packages_and_dependencies()
+    ignore_set = ignore or set()
+
+    packages = {
+        package: {
+            dependency for dependency in dependencies if dependency not in ignore_set
+        }
+        for package, dependencies in packages_unfiltered.items()
+        if package not in ignore_set
+    }
     print(f"total installed packages: {len(packages)}")
 
     if recursive:
@@ -134,12 +144,21 @@ if __name__ == "__main__":
         description="Count number of installed packages and their dependencies"
     )
     parser.add_argument(
-        "-n", type=int, help="max number of most bloated packages to show", default=10
+        "-n",
+        "--number",
+        type=int,
+        help="max number of most bloated packages to show",
+        default=10,
     )
     parser.add_argument(
         "--recursive",
         action="store_true",
         help="whether to recursively calculate number of dependencies",
     )
+    parser.add_argument(
+        "-i", "--ignore", nargs="+", help="packages to ignore in the calculation"
+    )
     args = parser.parse_args()
-    asyncio.run(main(n=args.n, recursive=args.recursive))
+    asyncio.run(
+        main(n=args.number, recursive=args.recursive, ignore=set(args.ignore or set()))
+    )
