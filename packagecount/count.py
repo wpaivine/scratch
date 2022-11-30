@@ -105,10 +105,16 @@ class DependencyCalculator:
         return {*dependencies, *additional_dependencies}
 
 
-async def main(n: int = 10, recursive: bool = False, ignore: set[str] = None):
+async def main(
+    n: int = 10,
+    recursive: bool = False,
+    ignore: set[str] = None,
+    dependency_chain_length: int = 0,
+):
     """
     List number of manually installed packages and show the top N packages with the most dependencies
     Args:
+        dependency_chain: number of subdependencies to show in final output
         ignore: set of packages to ignore for the calculation
         recursive: whether to calculate package dependencies recursively
         n: number of worst offenders to show
@@ -138,24 +144,56 @@ async def main(n: int = 10, recursive: bool = False, ignore: set[str] = None):
         dependency_calcualator = DependencyCalculator(packages)
         recursive_dependencies = {
             package: dependency_calcualator.calculate_all_dependencies(package)
-            for package in explicitly_installed_packages
+            for package in packages
         }
     else:
         recursive_dependencies = {
             package: dependency
             for package, dependency in packages.items()
-            if package in explicitly_installed_packages
+            if package in packages
         }
 
-    packages_sorted = sorted(
+    packages_sorted_unfiltered = sorted(
         recursive_dependencies.keys(),
         key=lambda package: -len(recursive_dependencies[package]),
     )
+    packages_sorted = [
+        package
+        for package in packages_sorted_unfiltered
+        if package in explicitly_installed_packages
+    ]
+
+    def format_package(package: str) -> str:
+        formatted = f"{package}: {len(recursive_dependencies[package])}"
+        if recursive:
+            formatted += f" ({len(packages[package])})"
+        return formatted
+
+    def dependency_chain(package: str, depth: int) -> str:
+        dependencies = recursive_dependencies[package]
+        heaviest_dependency = next(
+            (
+                package
+                for package in packages_sorted_unfiltered
+                if package in dependencies
+            ),
+            None,
+        )
+
+        out = f"({format_package(package)})"
+        if heaviest_dependency and depth - 1 >= 0:
+            out += " -> " + dependency_chain(heaviest_dependency, depth - 1)
+        return out
+
     print(f"top {n} packages:")
     print(
         "\n".join(
-            f"  {package}: {len(recursive_dependencies[package])}"
-            + (f" ({len(packages[package])})" if recursive else "")
+            f"  {format_package(package)}"
+            + (
+                "\n" f"    {dependency_chain(package, dependency_chain_length)}"
+                if dependency_chain_length
+                else ""
+            )
             for package in packages_sorted[: min(n, len(packages_sorted))]
         )
     )
@@ -173,6 +211,12 @@ if __name__ == "__main__":
         default=10,
     )
     parser.add_argument(
+        "--dependency-chain",
+        type=int,
+        help="number of subdependencies to show in final result (default: 0)",
+        default=0,
+    )
+    parser.add_argument(
         "--recursive",
         action="store_true",
         help="whether to recursively calculate number of dependencies",
@@ -182,5 +226,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     asyncio.run(
-        main(n=args.number, recursive=args.recursive, ignore=set(args.ignore or set()))
+        main(
+            n=args.number,
+            recursive=args.recursive,
+            ignore=set(args.ignore or set()),
+            dependency_chain_length=args.dependency_chain,
+        )
     )
