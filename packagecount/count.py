@@ -53,14 +53,19 @@ async def package_dependencies(package: str) -> set[str]:
     return info_dict.get("depends on", "").split("  ")
 
 
-async def packages_and_dependencies() -> dict[str, set[str]]:
+async def packages_and_dependencies(
+    only_explicitly_installed: bool = False,
+) -> dict[str, set[str]]:
     """
     Construct a mapping of packages -> dependencies, running the pacman calls concurrently with async
     Returns: dict mapping installed packages to sets of their dependencies
 
+    Args:
+        only_explicitly_installed: whether to only include explictly installed packages
+
     """
     packages_set = await packages_names(
-        ""
+        "e" if only_explicitly_installed else ""
     )  # omit the `e` so we get all packages and dependencies for a full tree
 
     async def collect_dependencies(package: str) -> tuple[str, set[str]]:
@@ -122,7 +127,7 @@ async def main(
     (
         packages_unfiltered,
         explicitly_installed_packages_unfiltered,
-    ) = await asyncio.gather(packages_and_dependencies(), packages_names())
+    ) = await asyncio.gather(packages_and_dependencies(not recursive), packages_names())
     ignore_set = ignore or set()
 
     packages = {
