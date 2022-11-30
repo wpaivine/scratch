@@ -1,6 +1,7 @@
 """Script for calculating which packages installed with pacman result in the most dependencies"""
 import argparse
 import asyncio
+from functools import cache
 
 
 async def run(cmd: str) -> list[str]:
@@ -20,7 +21,7 @@ async def run(cmd: str) -> list[str]:
 
 async def packages_names(pacman_args: str = "e") -> set[str]:
     """
-    query all installed packages with `pacman -Q[e]`
+    Query all installed packages with `pacman -Q[e]`
     Args:
         pacman_args: additional args to pass to pacman (default: `pacman -Qe`)
 
@@ -37,7 +38,7 @@ async def packages_names(pacman_args: str = "e") -> set[str]:
 
 async def package_dependencies(package: str) -> set[str]:
     """
-    query all dependencies for a package, using output of `pacman -Qi`
+    Query all dependencies for a package, using output of `pacman -Qi`
     Args:
         package: package to query
 
@@ -54,7 +55,7 @@ async def package_dependencies(package: str) -> set[str]:
 
 async def packages_and_dependencies() -> dict[str, set[str]]:
     """
-    construct a mapping of packages -> dependencies, running the pacman calls concurrently with async
+    Construct a mapping of packages -> dependencies, running the pacman calls concurrently with async
     Returns: dict mapping installed packages to sets of their dependencies
 
     """
@@ -70,28 +71,64 @@ async def packages_and_dependencies() -> dict[str, set[str]]:
     )
 
 
-async def main(n: int = 10):
+class DependencyCalculator:
+    def __init__(self, dependency_dict: [str, set[str]]):
+        """
+
+        Args:
+            dependency_dict: dictionary mapping package names to their set of direct dependencies
+        """
+        self._dependency_dict = dependency_dict
+
+    @cache
+    def calculate_all_dependencies(self, package: str) -> set[str]:
+        """
+        recursively calculates the number of dependencies of this package, and its children
+        Args:
+            package: package to calculate dependencies
+        """
+        dependencies = self._dependency_dict.get(package, set())
+        additional_dependencies = set().union(
+            *(
+                self.calculate_all_dependencies(dependency)
+                for dependency in dependencies
+            )
+        )
+        return {*dependencies, *additional_dependencies}
+
+
+async def main(n: int = 10, recursive: bool = False):
     """
     List number of manually installed packages and show the top N packages with the most dependencies
     Args:
-        n:
+        recursive: whether to calculate package dependencies recursively
+        n: number of worst offenders to show
     """
     packages = await packages_and_dependencies()
     print(f"total installed packages: {len(packages)}")
 
+    if recursive:
+        dependency_calcualator = DependencyCalculator(packages)
+        recursive_dependencies = {
+            package: dependency_calcualator.calculate_all_dependencies(package)
+            for package in packages
+        }
+    else:
+        recursive_dependencies = packages
+
     packages_sorted = sorted(
-        packages.keys(), key=lambda package: -len(packages[package])
+        packages.keys(), key=lambda package: -len(recursive_dependencies[package])
     )
     print(f"top {n} packages:")
     print(
         "\n".join(
-            f"  {package}: {len(packages[package])}"
+            f"  {package}: {len(recursive_dependencies[package])}"
+            + (f" ({len(packages[package])})" if recursive else "")
             for package in packages_sorted[: min(n, len(packages_sorted))]
         )
     )
 
 
-# Press the green button in the gutter to run the script.
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Count number of installed packages and their dependencies"
@@ -99,5 +136,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "-n", type=int, help="max number of most bloated packages to show", default=10
     )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="whether to recursively calculate number of dependencies",
+    )
     args = parser.parse_args()
-    asyncio.run(main(n=args.n))
+    asyncio.run(main(n=args.n, recursive=args.recursive))
