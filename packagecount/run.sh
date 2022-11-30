@@ -1,0 +1,1 @@
+python count.py --recursive -i kinfocenter plasma-desktop plasma-wayland-session plasma-nm sddm-kcm plasma-thunderbolt plasma-browser-integration powerdevil plasma-vault plasma-pa khotkeys kgamma5 kdeplasma-addons systemsettings plasma-workspace
