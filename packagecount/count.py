@@ -4,12 +4,29 @@ import asyncio
 
 
 async def run(cmd: str) -> list[str]:
+    """
+    Runs a shell command async
+
+    Args:
+        cmd: command to run
+
+    Returns: list of lines returned by the shell command
+
+    """
     proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
     return stdout.decode().split("\n")
 
 
 async def packages_names(pacman_args: str = "e") -> set[str]:
+    """
+    query all installed packages with `pacman -Q[e]`
+    Args:
+        pacman_args: additional args to pass to pacman (default: `pacman -Qe`)
+
+    Returns: set of strings representing all manually installed packages
+
+    """
     package_names = await run(f"pacman -Q{pacman_args}")
     return set(
         package_name.split(" ")[0]
@@ -19,6 +36,14 @@ async def packages_names(pacman_args: str = "e") -> set[str]:
 
 
 async def package_dependencies(package: str) -> set[str]:
+    """
+    query all dependencies for a package, using output of `pacman -Qi`
+    Args:
+        package: package to query
+
+    Returns: set of all dependencies of the given package
+
+    """
     pacman_info = await run(f"pacman -Qi {package}")
     info_pairs = (
         info_line.split(":", 1) for info_line in pacman_info if ":" in info_line
@@ -28,6 +53,11 @@ async def package_dependencies(package: str) -> set[str]:
 
 
 async def packages_and_dependencies() -> dict[str, set[str]]:
+    """
+    construct a mapping of packages -> dependencies, running the pacman calls concurrently with async
+    Returns: dict mapping installed packages to sets of their dependencies
+
+    """
     packages_set = await packages_names()
 
     async def collect_dependencies(package: str) -> tuple[str, set[str]]:
@@ -40,7 +70,12 @@ async def packages_and_dependencies() -> dict[str, set[str]]:
     )
 
 
-async def main(n=10):
+async def main(n: int = 10):
+    """
+    List number of manually installed packages and show the top N packages with the most dependencies
+    Args:
+        n:
+    """
     packages = await packages_and_dependencies()
     print(f"total installed packages: {len(packages)}")
 
@@ -66,5 +101,3 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     asyncio.run(main(n=args.n))
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
