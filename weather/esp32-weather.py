@@ -1,3 +1,4 @@
+"""script which communicates with an esp32 connected weather sensor using asyncio"""
 import argparse
 import asyncio
 import logging
